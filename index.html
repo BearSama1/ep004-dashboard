@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#0c1117">
+<title>EP004 艦隊狀態</title>
+<style>
+  :root {
+    --bg: #0c1117;
+    --card: #151d27;
+    --card2: #1c2733;
+    --text: #e8eef6;
+    --muted: #93a1b3;
+    --line: #2c3a4b;
+    --accent: #9dc2ff;
+    --working: #3dd68c;
+    --idle: #8aa4c8;
+    --error: #ff7b7b;
+    --compact: #e3c15a;
+    --wait: #e0a35a;
+    --missing: #c4a574;
+    --closed: #b7c0cb;
+    --up: #5eead4;
+    --retired: #8b95a3;
+    --unknown: #3a4654;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); }
+  body {
+    font-family: "Segoe UI", "PingFang TC", "Noto Sans CJK TC", "Microsoft JhengHei", sans-serif;
+    font-size: 15px;
+    line-height: 1.45;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 14px 12px 28px; }
+  h1 { font-size: 1.35rem; margin: 0; letter-spacing: 0.01em; }
+  h2 { font-size: 0.95rem; margin: 18px 0 8px; color: var(--muted); font-weight: 650; }
+  .sub { color: var(--muted); margin: 4px 0 8px; font-size: 0.86rem; }
+  .updated { font-variant-numeric: tabular-nums; font-size: 0.92rem; }
+  .stale, .fetcherr {
+    display: none;
+    margin-top: 8px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: #3a2a12;
+    color: #ffd89a;
+    border: 1px solid #6a4e1d;
+  }
+  .fetcherr { background: #3a1717; color: #ffc9c9; border-color: #7a3030; }
+  .policy, .card, .stat {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+  }
+  .policy { padding: 12px; margin-top: 12px; }
+  .dual { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: stretch; }
+  .chip { background: var(--card2); border-radius: 10px; padding: 8px 10px; }
+  .k { color: var(--muted); font-size: 0.75rem; display: block; margin-bottom: 2px; }
+  .and {
+    align-self: center;
+    font-weight: 750;
+    color: var(--accent);
+    border: 1px solid #35527a;
+    background: #1a2c42;
+    border-radius: 999px;
+    padding: 4px 10px;
+  }
+  .seal { margin-top: 8px; color: #f0d7a2; background: #2a2418; border: 1px solid #5c4a28; }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+  .stat { padding: 10px; }
+  .stat .v { font-weight: 680; margin-top: 2px; }
+  .bad { border-color: #7a3030; }
+  .warn { border-color: #6a4e1d; }
+  .ok { border-color: #1f5c52; }
+  .card { padding: 12px; margin-top: 10px; border-left: 5px solid var(--line); }
+  .card.st-working { border-left-color: var(--working); }
+  .card.st-idle { border-left-color: var(--idle); }
+  .card.st-error { border-left-color: var(--error); }
+  .card.st-compacting { border-left-color: var(--compact); }
+  .card.st-waiting_gate { border-left-color: var(--wait); }
+  .card.st-missing { border-left-color: var(--missing); }
+  .card.st-closed { border-left-color: var(--closed); }
+  .card.st-up { border-left-color: var(--up); }
+  .card.st-retired { border-left-color: var(--retired); }
+  .top { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+  .role { font-weight: 750; font-size: 1.05rem; }
+  .session { color: var(--muted); font-size: 0.78rem; font-family: ui-monospace, Consolas, monospace; }
+  .badge {
+    display: inline-block;
+    border-radius: 999px;
+    padding: 3px 8px;
+    font-size: 0.75rem;
+    font-weight: 750;
+    white-space: nowrap;
+    background: #243140;
+  }
+  .st-working .badge { background: #123526; color: var(--working); }
+  .st-idle .badge { background: #1c2838; color: var(--idle); }
+  .st-error .badge { background: #3a1717; color: var(--error); }
+  .st-compacting .badge { background: #3a3214; color: var(--compact); }
+  .st-waiting_gate .badge { background: #3a2a14; color: var(--wait); }
+  .st-missing .badge { background: #332a1c; color: var(--missing); }
+  .st-closed .badge { background: #2a3036; color: var(--closed); }
+  .st-up .badge { background: #12332f; color: var(--up); }
+  .st-retired .badge { background: #2a3036; color: var(--retired); }
+  .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; margin-top: 8px; font-size: 0.86rem; }
+  .topic { margin: 8px 0 0; font-size: 0.9rem; }
+  .snip {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 12px;
+    background: #101820;
+    border-radius: 6px;
+    padding: 4px 6px;
+    margin-top: 4px;
+    overflow-wrap: anywhere;
+    color: #c5d0dc;
+  }
+  .bar { display: flex; gap: 2px; margin-top: 8px; height: 10px; }
+  .bar i { flex: 1; border-radius: 2px; background: var(--unknown); display: block; }
+  .bar i.working { background: var(--working); }
+  .bar i.compacting { background: var(--compact); }
+  .bar i.idle { background: var(--idle); }
+  .bar i.error { background: var(--error); }
+  .bar i.waiting_gate { background: var(--wait); }
+  .bar i.missing { background: var(--missing); }
+  .bar i.closed { background: var(--closed); }
+  .usage { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-top: 8px; }
+  .usage div { background: var(--card2); border-radius: 8px; padding: 6px 8px; font-size: 0.8rem; }
+  .usage b { display: block; font-weight: 700; font-variant-numeric: tabular-nums; }
+  details { margin-top: 8px; }
+  summary { cursor: pointer; color: var(--accent); }
+  ul.names { margin: 6px 0 0; padding-left: 1.1rem; }
+  ul.names li { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+  .note { color: var(--muted); font-size: 0.78rem; margin-top: 14px; }
+  .counts { color: var(--muted); font-size: 0.84rem; }
+  @media (max-width: 640px) {
+    .dual, .stats, .usage, .meta { grid-template-columns: 1fr; }
+    .and { justify-self: start; }
+    h1 { font-size: 1.2rem; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>EP004 艦隊狀態</h1>
+    <p class="sub">唯讀 · GitHub Pages 版 · 每 90 秒更新（數據約每 60 秒發佈一次）· 不下指令、不跑回測</p>
+    <div class="updated" id="updated" aria-live="polite">上次更新：載入中…</div>
+    <div class="updated" id="dataage">數據更新於 — 秒前</div>
+    <div class="stale" id="stale">資料過時：數據超過 5 分鐘沒有更新（發佈器或收集器可能停咗）。</div>
+    <div class="fetcherr" id="fetcherr"></div>
+  </header>
+  <section class="policy">
+    <div class="dual">
+      <div class="chip"><span class="k">固定 20 fixed-20</span><span id="bar-fixed">—</span></div>
+      <div class="and">AND</div>
+      <div class="chip"><span class="k">PIT</span><span id="bar-pit">—</span></div>
+    </div>
+    <div class="chip seal" id="holdout">HOLDOUT 封存</div>
+  </section>
+  <div class="stats" id="stats"></div>
+  <p class="counts" id="counts"></p>
+  <h2>線路</h2>
+  <div id="cards"></div>
+  <h2>用量（非即時線路）</h2>
+  <div id="extras"></div>
+  <h2>守衛</h2>
+  <p class="sub">工作階段存在即在線。duplicate session 無害。</p>
+  <div id="guards"></div>
+  <p class="note" id="costnote"></p>
+  <p class="note">本頁只讀 status.json。沒有按鈕、沒有表單，不會對研究窗格送出按鍵。</p>
+  <p class="note">此頁為自動發佈嘅唯讀狀態頁（GitHub Pages，約 1–2 分鐘延遲）。想睇實時版本：<a href="https://prepaid-vessel-clubbed.ngrok-free.dev" target="_blank" rel="noopener" style="color:inherit">ngrok 實時版</a>（免費線偶爾會斷）。</p>
+</div>
+<script>
+(function () {
+  "use strict";
+  var CLS = {
+    working: "st-working", idle: "st-idle", error: "st-error", compacting: "st-compacting",
+    waiting_gate: "st-waiting_gate", missing: "st-missing", closed: "st-closed", up: "st-up", retired: "st-retired"
+  };
+
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+  function setText(node, sel, text) {
+    var n = node.querySelector(sel);
+    var v = text == null ? "—" : String(text);
+    if (n && n.textContent !== v) n.textContent = v;
+  }
+  function tok(n) {
+    n = Number(n || 0);
+    if (n >= 1e9) return (n / 1e9).toFixed(2) + "B";
+    if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
+    if (n >= 1e3) return (n / 1e3).toFixed(1) + "k";
+    return String(Math.round(n));
+  }
+  function money(bucket) {
+    if (!bucket) return "—";
+    if (bucket.usd_source === "unknown") return "價錢未知";
+    if (bucket.usd_source === "none") return "$0.00";
+    var n = Number(bucket.usd || 0);
+    var s = "$" + n.toFixed(2);
+    if (bucket.usd_source === "estimate") s += " 估算";
+    else if (bucket.usd_source === "mixed") s += " 混合";
+    else if (bucket.usd_source === "pi") s += " pi";
+    if (bucket.unknown_tokens) s += " · 部分未知";
+    return s;
+  }
+  function usageBlock(title, bucket) {
+    var box = el("div");
+    box.appendChild(el("span", "k", title));
+    var b = el("b");
+    b.dataset.part = "usd";
+    b.textContent = money(bucket);
+    box.appendChild(b);
+    var small = el("span", "k");
+    small.dataset.part = "tok";
+    var t = bucket || {};
+    small.textContent = "入 " + tok(t.input) + " · 出 " + tok(t.output);
+    box.appendChild(small);
+    return box;
+  }
+  function fillUsage(node, usage) {
+    var slots = node.querySelectorAll("[data-slot]");
+    ["last_1h", "today", "all_time"].forEach(function (key, i) {
+      var bucket = usage && usage[key];
+      var slot = slots[i];
+      if (!slot) return;
+      slot.querySelector("[data-part=usd]").textContent = money(bucket);
+      var t = bucket || {};
+      slot.querySelector("[data-part=tok]").textContent =
+        "入 " + tok(t.input) + " · 出 " + tok(t.output) +
+        " · 讀 " + tok(t.cache_read) + " · 寫 " + tok(t.cache_write);
+    });
+  }
+  function badgeText(item) {
+    var zh = item.state_zh || item.state || "?";
+    var en = item.state_en || "";
+    return en ? zh + " " + en : zh;
+  }
+  function applyStateClass(node, stateName) {
+    var cls = "card " + (CLS[stateName] || "st-idle");
+    if (node.className !== cls) node.className = cls;
+  }
+  function paintBar(node, cells) {
+    var bar = node.querySelector(".bar");
+    if (!bar) return;
+    var items = bar.children;
+    var list = cells || [];
+    for (var i = 0; i < items.length; i++) {
+      var name = list[i] || "unknown";
+      if (items[i].className !== name) items[i].className = name;
+    }
+  }
+  function makeCard(item) {
+    var card = el("article", "card");
+    card.dataset.id = item.id || item.session;
+    var top = el("div", "top");
+    var left = el("div");
+    left.appendChild(el("div", "role"));
+    left.appendChild(el("div", "session"));
+    top.appendChild(left);
+    top.appendChild(el("span", "badge"));
+    card.appendChild(top);
+    var meta = el("div", "meta");
+    ["模型", "上下文", "閒置時長", "近24小時運行"].forEach(function (k) {
+      var block = el("div");
+      block.appendChild(el("span", "k", k));
+      block.appendChild(el("div", "v"));
+      meta.appendChild(block);
+    });
+    card.appendChild(meta);
+    card.appendChild(el("p", "topic"));
+    var bar = el("div", "bar");
+    bar.title = "近 24 小時，左舊右新";
+    for (var i = 0; i < 24; i++) bar.appendChild(el("i"));
+    card.appendChild(bar);
+    var usage = el("div", "usage");
+    usage.appendChild(usageBlock("近 1 小時", null));
+    usage.appendChild(usageBlock("今日 HKT", null));
+    usage.appendChild(usageBlock("累計", null));
+    var slots = usage.children;
+    slots[0].dataset.slot = "1";
+    slots[1].dataset.slot = "2";
+    slots[2].dataset.slot = "3";
+    card.appendChild(usage);
+    var snips = el("div", "snips");
+    card.appendChild(snips);
+    return card;
+  }
+  function updateCard(card, item) {
+    applyStateClass(card, item.state);
+    setText(card, ".role", item.role || item.label || "");
+    var sess = item.session || "";
+    if (item.closed && item.activity && item.activity !== "missing") sess += " · 窗格 " + item.activity;
+    if (item.subscription_footer) sess += " · 訂閱(sub)";
+    setText(card, ".session", sess);
+    setText(card, ".badge", badgeText(item));
+    var vals = card.querySelectorAll(".meta .v");
+    var obs = item.observed_seconds ? Math.round(item.observed_seconds / 3600) : 0;
+    var pct = item.working_pct_24h == null ? "—" : (item.working_pct_24h + "% · 已觀察 " + obs + " 小時");
+    var texts = [item.model || "—", item.context || "—", item.idle_text || "—", pct];
+    for (var i = 0; i < vals.length; i++) {
+      if (vals[i].textContent !== texts[i]) vals[i].textContent = texts[i];
+    }
+    setText(card, ".topic", item.topic || "");
+    paintBar(card, item.timeline);
+    fillUsage(card, item.usage);
+    var sn = card.querySelector(".snips");
+    var want = item.snippet || [];
+    if (sn.childElementCount !== want.length) {
+      sn.textContent = "";
+      want.forEach(function (line) { sn.appendChild(el("div", "snip", line)); });
+    } else {
+      for (var j = 0; j < want.length; j++) {
+        if (sn.children[j].textContent !== want[j]) sn.children[j].textContent = want[j];
+      }
+    }
+  }
+  function syncList(container, items, idOf) {
+    var seen = {};
+    (items || []).forEach(function (item) {
+      var id = idOf(item);
+      seen[id] = true;
+      var node = container.querySelector('[data-id="' + id + '"]');
+      if (!node) {
+        node = makeCard(item);
+        container.appendChild(node);
+      }
+      updateCard(node, item);
+    });
+    Array.prototype.slice.call(container.children).forEach(function (node) {
+      if (!seen[node.dataset.id]) node.remove();
+    });
+  }
+  function renderStats(data) {
+    var fleet = data.fleet || {};
+    var mem = (fleet.memory || {}).text || "—";
+    var heavy = fleet.heavy_bt || {};
+    var alert = fleet.owner_alert || {};
+    var gated = fleet.gated_proposals || {};
+    var wrap = document.getElementById("stats");
+    wrap.textContent = "";
+    function box(k, v, cls) {
+      var n = el("div", "stat" + (cls ? " " + cls : ""));
+      n.appendChild(el("span", "k", k));
+      n.appendChild(el("div", "v", v));
+      return n;
+    }
+    wrap.appendChild(box("可用記憶體", mem));
+    var heavyText = "未進行";
+    var heavyCls = "ok";
+    if (heavy && heavy.running) {
+      heavyText = "進行中 " + (heavy.track || "?") + " / " + (heavy.route || "?");
+      if (heavy.started) heavyText += " · " + heavy.started;
+      heavyCls = "warn";
+    }
+    wrap.appendChild(box("重型回測", heavyText, heavyCls));
+    var alertText = "未見";
+    var alertCls = "ok";
+    if (alert && alert.present === true) {
+      alertText = "存在 " + (alert.files || []).length;
+      alertCls = "bad";
+    } else if (alert && alert.present == null) {
+      alertText = "掃描未完成";
+      alertCls = "warn";
+    }
+    wrap.appendChild(box("擁有者警報", alertText, alertCls));
+    wrap.appendChild(box("待審提案", gated && gated.count != null ? String(gated.count) + " 份" : "—"));
+    var fu = (fleet.usage || {}).today;
+    wrap.appendChild(box("艦隊今日費用", money(fu)));
+    var fa = (fleet.usage || {}).all_time;
+    wrap.appendChild(box("艦隊累計費用", money(fa)));
+    if (gated && gated.names && gated.names.length) {
+      var names = el("div", "stat");
+      names.style.gridColumn = "1 / -1";
+      var det = el("details");
+      det.appendChild(el("summary", null, "待審提案檔名 (" + gated.names.length + ")"));
+      var ul = el("ul", "names");
+      gated.names.forEach(function (name) { ul.appendChild(el("li", null, name)); });
+      det.appendChild(ul);
+      names.appendChild(det);
+      wrap.appendChild(names);
+    }
+  }
+  function render(data) {
+    document.getElementById("fetcherr").style.display = "none";
+    var when = data.generated_at || data.updated_at || "—";
+    var skew = data.generated_epoch ? Math.round(Date.now() / 1000 - data.generated_epoch) : 0;
+    document.getElementById("updated").textContent = "上次更新 " + when;
+    lastEpoch = data.generated_epoch || 0;
+    document.getElementById("stale").style.display = skew > 300 ? "block" : "none";
+    tickAge();
+    var fleet = data.fleet || {};
+    var bar = fleet.dual_bar || {};
+    document.getElementById("bar-fixed").textContent = bar.fixed20 || "—";
+    document.getElementById("bar-pit").textContent = bar.pit || "—";
+    document.getElementById("holdout").textContent = (fleet.holdout || {}).text || "HOLDOUT 封存";
+    renderStats(data);
+    var counts = { working: 0, idle: 0, error: 0, compacting: 0, waiting_gate: 0, missing: 0, closed: 0 };
+    (data.lines || []).forEach(function (item) {
+      if (counts[item.state] != null) counts[item.state] += 1;
+      else if (counts[item.activity] != null) counts[item.activity] += 1;
+    });
+    document.getElementById("counts").textContent =
+      "運行中 " + counts.working + " · 閒置 " + counts.idle + " · 錯誤 " + counts.error +
+      " · 壓縮中 " + counts.compacting + " · 等候閘門 " + counts.waiting_gate +
+      " · 不存在 " + counts.missing + " · 已關閉 " + counts.closed;
+    syncList(document.getElementById("cards"), data.lines || [], function (item) { return item.id; });
+    syncList(document.getElementById("extras"), data.extras || [], function (item) { return item.id; });
+    syncList(document.getElementById("guards"), data.guards || [], function (item) { return item.id; });
+    document.getElementById("costnote").textContent = (data.fleet || {}).cost_note || "";
+  }
+  function showError(msg) {
+    var err = document.getElementById("fetcherr");
+    err.style.display = "block";
+    err.textContent = "暫時攞唔到新數據，90 秒後自動重試，以下為上次數據。唔使重新整理頁面。(" + msg + ")";
+  }
+  var API_URL = "https://api.github.com/repos/BearSama1/ep004-dashboard/contents/status.json?ref=data";
+  var RAW_URL = "https://raw.githubusercontent.com/BearSama1/ep004-dashboard/data/status.json";
+  var lastEpoch = 0;
+  function tickAge() {
+    var el2 = document.getElementById("dataage");
+    if (!lastEpoch) { el2.textContent = "數據更新於 — 秒前"; return; }
+    var age = Math.max(0, Math.round(Date.now() / 1000 - lastEpoch));
+    el2.textContent = age < 120 ? "數據更新於 " + age + " 秒前"
+      : "數據更新於 " + Math.floor(age / 60) + " 分 " + (age % 60) + " 秒前";
+  }
+  function getJSON(url, headers) {
+    return fetch(url, { cache: "no-store", headers: headers || {} }).then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    });
+  }
+  function refresh() {
+    // Primary: GitHub contents API (fresh, unauthenticated limit 60/hr per IP -> poll every 90s).
+    // Fallback: raw.githubusercontent.com (CDN cached up to ~5 min; query strings do NOT bust it).
+    getJSON(API_URL, { Accept: "application/vnd.github.raw" })
+      .catch(function () { return getJSON(RAW_URL + "?t=" + Date.now()); })
+      .then(render)
+      .catch(function (e) { showError(e && e.message ? e.message : "network"); });
+  }
+  refresh();
+  setInterval(refresh, 90000);
+  setInterval(tickAge, 1000);
+})();
+</script>
+</body>
+</html>
